@@ -27,5 +27,5 @@ Any static file server works. The page loads three.js from the jsDelivr CDN and 
 - `src/rules.js` — rules engine (pure functions, no DOM; time is passed in)
 - `src/bot.js` — computer players
 - `src/main.js` — game loop, 3D pieces, controls and the duel panels
-- `src/fx.js` — battlefield scenery and combat effects (lava, fire wall, explosions)
+- `src/fx.js` — battlefield scenery (shader fire and smoke, lava moat, terrain, ruins, banners) and combat effects
 - `test/rules.test.js` — rules tests, including a full bots-only game

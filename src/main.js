@@ -28,7 +28,7 @@ controls.maxPolarAngle = 1.32;
 controls.minDistance = 6;
 controls.autoRotateSpeed = 0.5;
 
-buildWorld(scene);
+const world = buildWorld(scene);
 const particles = new Particles(scene);
 const fx = new Effects(scene, particles);
 
@@ -174,7 +174,7 @@ function buildBoard() {
   arcs.clear();
 
   const R = state.config.boardRadius;
-  arena = buildArena(R);
+  arena = buildArena(R, state.players);
   scene.add(arena.group);
 
   tileCells = [];
@@ -587,7 +587,7 @@ function frame(now) {
     syncTiles(now);
     syncArcs(t);
     const hot = state.radius > state.config.minRadius && now >= state.nextShrinkAt - state.config.shrinkWarning ? 1 : 0;
-    arena.update(t, state.radius, hot);
+    arena.update(t, state.radius, hot, camera);
     // Embers rising from the battlefield.
     for (let i = 0; i < 3; i++) {
       const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * (state.radius + 2);
@@ -596,6 +596,7 @@ function frame(now) {
     updateHud(now);
     if (now - lastSlow > 300) updateSlow(now);
   }
+  world.update(t);
   particles.update(dt);
   fx.update(dt);
   controls.update();
