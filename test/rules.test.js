@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   newGame, legalMoves, move, startAttack, defend, tick, eligibleGuards, isPlayable, isDoomed,
-  autoDefense, pointsByPlayer, findPiece,
+  autoDefense, pointsByPlayer, findPiece, START_POINTS,
 } from '../src/rules.js';
 import { botAct, botDefense } from '../src/bot.js';
 
@@ -186,4 +186,68 @@ test('bots alone can play a full 4-player game to a winner', () => {
   }
   assert.equal(s.gameOver, true);
   assert.ok(s.winner === null || s.players[s.winner].alive);
+});
+
+// ---------- capture the flag ----------
+test('capture the flag: a piece on the flag scores, and two points when alone', () => {
+  const s = newGame(4, { humans: [], now: 0, config: { mode: 'flag' } });
+  assert.ok(s.flag, 'a flag is up from the start');
+  const { r, c } = s.flag;
+  s.board[r][c] = { id: 9001, type: 'R', owner: 0, hp: 15 };
+  tick(s, 3000);
+  assert.equal(s.scores[0], 6); // 3 seconds alone on the flag
+  assert.deepEqual(s.scores.slice(1), [0, 0, 0]);
+});
+
+test('capture the flag: sharing the flag is worth one point each', () => {
+  const s = newGame(4, { humans: [], now: 0, config: { mode: 'flag' } });
+  const { r, c } = s.flag;
+  s.board[r][c] = { id: 9001, type: 'R', owner: 0, hp: 15 };
+  s.board[r][c + 1] = { id: 9002, type: 'R', owner: 1, hp: 15 };
+  tick(s, 2000);
+  assert.deepEqual(s.scores.slice(0, 2), [2, 2]);
+});
+
+test('capture the flag: the flag moves on its own', () => {
+  const s = newGame(4, { humans: [], now: 0, config: { mode: 'flag' } });
+  const first = { ...s.flag };
+  tick(s, s.config.flagLife + 10);
+  assert.notDeepEqual([s.flag.x, s.flag.y], [first.x, first.y]);
+});
+
+test('capture the flag: captured pieces come back, kings do not end the game', () => {
+  const s = newGame(2, { humans: [], now: 0, config: { mode: 'flag' } });
+  const kingAt = findPiece(s, s.board.flat().find((p) => p && p.type === 'K' && p.owner === 1).id);
+  const kings = s.board[kingAt[0]][kingAt[1]];
+  // A lone attacker next to the enemy king takes it.
+  s.board[kingAt[0]][kingAt[1] + 1] = { id: 9003, type: 'Q', owner: 0, hp: 27 };
+  const duel = startAttack(s, { from: [kingAt[0], kingAt[1] + 1], to: kingAt, attackBid: 20 }, 1000);
+  if (!duel.result) defend(s, duel.id, { guards: [] }, 1000);
+  assert.equal(s.players[1].alive, true, 'nobody is eliminated in this mode');
+  assert.equal(s.gameOver, false);
+  assert.equal(s.respawns.length, 1);
+  assert.equal(s.respawns[0].type, 'K');
+  tick(s, 1000 + s.config.respawnDelay + 10);
+  assert.equal(s.respawns.length, 0);
+  const back = s.board.flat().filter((p) => p && p.owner === 1 && p.type === 'K');
+  assert.equal(back.length, 1);
+  assert.equal(back[0].hp, START_POINTS.K, 'it comes back at full points');
+  assert.notEqual(back[0].id, kings.id);
+});
+
+test('capture the flag: first to the target score wins', () => {
+  const s = newGame(2, { humans: [], now: 0, config: { mode: 'flag', targetScore: 10 } });
+  const { r, c } = s.flag;
+  s.board[r][c] = { id: 9004, type: 'R', owner: 1, hp: 15 };
+  tick(s, 6000);
+  assert.equal(s.gameOver, true);
+  assert.equal(s.winner, 1);
+});
+
+test('royale mode is unchanged: no flag, no respawns', () => {
+  const s = newGame(4, { humans: [], now: 0 });
+  assert.equal(s.mode, 'royale');
+  assert.equal(s.flag, null);
+  tick(s, 60000);
+  assert.equal(s.respawns.length, 0);
 });

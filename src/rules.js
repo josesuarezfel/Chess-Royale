@@ -5,6 +5,7 @@ export const START_POINTS = { K: 30, Q: 27, R: 15, B: 9, N: 9, P: 3 };
 export const PIECE_NAMES = { K: 'King', Q: 'Queen', R: 'Rook', B: 'Bishop', N: 'Knight', P: 'Pawn' };
 
 export const DEFAULT_CONFIG = {
+  mode: 'royale', // 'royale' (last king standing) or 'flag' (hold the flag for points)
   boardRadius: null, // in squares from the centre to the edge; null picks one by player count
   cooldown: 5000, // wait after each move or attack
   duelWindow: 15000, // time a defender has to answer an attack
@@ -12,6 +13,12 @@ export const DEFAULT_CONFIG = {
   shrinkEvery: 60000, // between collapses
   shrinkWarning: 15000, // doomed squares are marked this long before
   minRadius: 3, // the board stops shrinking here
+  // Capture the flag
+  flagRadius: 2.6, // how far from the flag a piece still counts as inside, in squares
+  flagLife: 30000, // a flag stays this long, then one appears somewhere else
+  flagScoreEvery: 1000, // a point is handed out this often
+  targetScore: 60, // first to this many points wins
+  respawnDelay: 10000, // a captured piece comes back this long after it falls
 };
 
 export const SEAT_COLORS = [
@@ -70,6 +77,7 @@ function placeArmies(state, count) {
     for (const { type, at } of cellsFor(d)) {
       if (state.board[at[0]][at[1]]) throw new Error('Board too small for this many players');
       state.board[at[0]][at[1]] = makePiece(type, i);
+      state.homes[i].push([at[0], at[1]]); // where this army respawns in capture the flag
     }
   }
 }
@@ -93,7 +101,15 @@ export function newGame(players, { humans = [0], now = 0, config = {} } = {}) {
       id: i, ...SEAT_COLORS[i], human: humans.includes(i), alive: true, readyAt: now,
     })),
     duels: [],
-    nextShrinkAt: now + cfg.shrinkStart,
+    homes: Array.from({ length: players }, () => []),
+    // Capture the flag only:
+    mode: cfg.mode,
+    scores: Array.from({ length: players }, () => 0),
+    flag: null, // { r, c, x, y, until }
+    nextScoreAt: Infinity, // when the next point is handed out
+    respawns: [], // [{ owner, type, at }]
+    nextShrinkAt: cfg.mode === 'flag' ? Infinity : now + cfg.shrinkStart,
+    now,
     startedAt: now,
     gameOver: false,
     winner: null,
@@ -101,7 +117,94 @@ export function newGame(players, { humans = [0], now = 0, config = {} } = {}) {
     events: [], // results for the UI to show, drained by the caller
   };
   placeArmies(state, players);
+  if (cfg.mode === 'flag') { state.nextScoreAt = now + cfg.flagScoreEvery; moveFlag(state, now); }
   return state;
+}
+
+// ---------- capture the flag ----------
+// One flag at a time. Pieces standing within flagRadius of it earn their player points.
+export function moveFlag(state, now) {
+  const R = state.config.boardRadius;
+  const far = state.flag ? [state.flag.x, state.flag.y] : null;
+  // Where each army sits, so no one gets a flag on their doorstep.
+  const camps = state.homes.map((h) => {
+    const cs = h.map(([r, c]) => cellCenter(state, r, c));
+    return [cs.reduce((t, p) => t + p.x, 0) / cs.length, cs.reduce((t, p) => t + p.y, 0) / cs.length];
+  });
+  const reach = (state.radius - state.config.flagRadius - 1) * 0.75;
+  let best = null;
+  for (let tries = 0; tries < 80; tries++) {
+    const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * reach;
+    const x = Math.cos(a) * d, y = Math.sin(a) * d;
+    const ds = camps.map(([cx, cy]) => Math.hypot(x - cx, y - cy));
+    const fairness = Math.min(...ds) / Math.max(...ds); // 1 means the same walk for everyone
+    const away = far ? Math.min(Math.hypot(x - far[0], y - far[1]), state.radius) : state.radius;
+    const score = fairness * 3 + away / state.radius;
+    if (!best || score > best.score) best = { x, y, score };
+  }
+  const [r, c] = [Math.floor(best.y + R), Math.floor(best.x + R)];
+  state.flag = { r, c, x: best.x, y: best.y, until: now + state.config.flagLife };
+  state.log.push('A new flag is raised');
+  state.events.push({ kind: 'flag', r, c, x: best.x, y: best.y });
+}
+
+// Is this square inside the flag's circle?
+export function inFlag(state, r, c) {
+  if (!state.flag) return false;
+  const { x, y } = cellCenter(state, r, c);
+  return Math.hypot(x - state.flag.x, y - state.flag.y) <= state.config.flagRadius;
+}
+
+// Which players have a piece standing on the flag right now.
+export function flagHolders(state) {
+  const out = new Set();
+  if (!state.flag) return out;
+  for (let r = 0; r < state.size; r++)
+    for (let c = 0; c < state.size; c++)
+      if (state.board[r][c] && inFlag(state, r, c)) out.add(state.board[r][c].owner);
+  return out;
+}
+
+// A captured piece comes back on its army's starting squares after a wait.
+function scheduleRespawn(state, piece, now) {
+  state.respawns.push({ owner: piece.owner, type: piece.type, at: now + state.config.respawnDelay });
+}
+
+function doRespawns(state, now) {
+  for (const re of [...state.respawns]) {
+    if (now < re.at) continue;
+    const free = state.homes[re.owner].filter(([r, c]) => isPlayable(state, r, c) && !state.board[r][c]);
+    const spot = free.length ? free[Math.floor(Math.random() * free.length)] : nearestFree(state, re.owner);
+    if (!spot) continue; // no room yet: try again next tick
+    state.respawns = state.respawns.filter((x) => x !== re);
+    state.board[spot[0]][spot[1]] = makePiece(re.type, re.owner);
+    state.log.push(`${state.players[re.owner].name} ${PIECE_NAMES[re.type]} returns to the field`);
+    state.events.push({ kind: 'respawn', owner: re.owner, type: re.type, at: spot });
+  }
+}
+
+function nearestFree(state, owner) {
+  const home = state.homes[owner];
+  const cx = home.reduce((s, [r]) => s + r, 0) / home.length;
+  const cy = home.reduce((s, [, c]) => s + c, 0) / home.length;
+  let best = null;
+  for (let r = 0; r < state.size; r++)
+    for (let c = 0; c < state.size; c++) {
+      if (!isPlayable(state, r, c) || state.board[r][c]) continue;
+      const d = Math.hypot(r - cx, c - cy);
+      if (!best || d < best.d) best = { at: [r, c], d };
+    }
+  return best?.at ?? null;
+}
+
+// A point a second for every player on the flag, and one more for holding it alone.
+function scoreFlag(state, now) {
+  while (now >= state.nextScoreAt) {
+    const holders = [...flagHolders(state)];
+    for (const owner of holders) state.scores[owner] += holders.length === 1 ? 2 : 1;
+    if (holders.length) state.events.push({ kind: 'score', holders, alone: holders.length === 1 });
+    state.nextScoreAt += state.config.flagScoreEvery;
+  }
 }
 
 export function isPlayable(state, r, c) {
@@ -202,6 +305,7 @@ function checkAction(state, from, to, capture, now) {
 
 export function move(state, from, to, now) {
   const p = checkAction(state, from, to, false, now);
+  state.now = now;
   state.board[to[0]][to[1]] = p;
   state.board[from[0]][from[1]] = null;
   state.players[p.owner].readyAt = now + state.config.cooldown;
@@ -235,6 +339,7 @@ export function eligibleGuards(state, duel) {
 // An unprotected target is resolved at once (duel.result is set).
 export function startAttack(state, { from, to, attackBid }, now) {
   const attacker = checkAction(state, from, to, true, now);
+  state.now = now;
   checkBid(attacker, attackBid, 'attack');
   const defender = state.board[to[0]][to[1]];
   state.players[attacker.owner].readyAt = now + state.config.cooldown;
@@ -249,7 +354,7 @@ export function startAttack(state, { from, to, attackBid }, now) {
   };
   state.duels.push(duel);
   // Nothing protects the target: there is nothing to decide, so it falls right away.
-  if (eligibleGuards(state, duel).length === 0) duel.result = defend(state, duel.id, { guards: [] });
+  if (eligibleGuards(state, duel).length === 0) duel.result = defend(state, duel.id, { guards: [] }, now);
   return duel;
 }
 
@@ -261,7 +366,7 @@ export function autoDefense(state, duel) {
 // Resolves a duel. The attacked piece can't bid for itself: only the pieces protecting it
 // (its guards) defend. Every piece loses what it bid; a higher attack kills the defender and takes its square.
 // answer = { guards: [{ id, bid }] }
-export function defend(state, duelId, { guards = [] } = {}) {
+export function defend(state, duelId, { guards = [] } = {}, now = null) {
   const duel = state.duels.find((d) => d.id === duelId);
   if (!duel) throw new Error('No such duel');
   const aAt = findPiece(state, duel.attackerId);
@@ -300,7 +405,8 @@ export function defend(state, duelId, { guards = [] } = {}) {
     state.board[dAt[0]][dAt[1]] = attacker;
     state.board[aAt[0]][aAt[1]] = null;
     state.log.push(`${aName} beat ${dName} (${duel.attackBid} vs ${totalDefense})`);
-    if (defender.type === 'K') eliminate(state, defender.owner, 'king captured');
+    if (state.mode === 'flag') scheduleRespawn(state, defender, now ?? state.now);
+    else if (defender.type === 'K') eliminate(state, defender.owner, 'king captured');
   } else {
     state.log.push(`${dName} was saved by its guards (${totalDefense} vs ${duel.attackBid})`);
   }
@@ -323,6 +429,17 @@ function eliminate(state, owner, reason) {
 
 function checkWinner(state) {
   if (state.gameOver) return;
+  if (state.mode === 'flag') {
+    const top = state.scores.reduce((b, v, i) => (v > state.scores[b] ? i : b), 0);
+    if (state.scores[top] >= state.config.targetScore) {
+      state.gameOver = true;
+      state.winner = top;
+      state.duels = [];
+      state.log.push(`${state.players[top].name} wins the flags!`);
+      state.events.push({ kind: 'gameOver', winner: top });
+    }
+    return;
+  }
   const alive = state.players.filter((p) => p.alive);
   if (alive.length <= 1) {
     state.gameOver = true;
@@ -353,8 +470,14 @@ function shrink(state) {
 // Advances the clock: unanswered duels get the automatic defense, and the board shrinks on schedule.
 export function tick(state, now) {
   if (state.gameOver) return;
+  state.now = now;
   for (const duel of [...state.duels]) {
-    if (now >= duel.deadline && state.duels.includes(duel)) defend(state, duel.id, autoDefense(state, duel));
+    if (now >= duel.deadline && state.duels.includes(duel)) defend(state, duel.id, autoDefense(state, duel), now);
+  }
+  if (state.mode === 'flag') {
+    doRespawns(state, now);
+    if (!state.flag || now >= state.flag.until) moveFlag(state, now);
+    scoreFlag(state, now);
   }
   while (!state.gameOver && now >= state.nextShrinkAt && state.radius > state.config.minRadius) {
     shrink(state);

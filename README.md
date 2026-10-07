@@ -13,6 +13,11 @@ Free-for-all chess in 3D on a round board. There are no turns: after every move 
 
 The prototype is you (Red) against 1 to 7 computer players.
 
+## Game modes
+
+- **Battle Royale**: the rules above. Lose your king and you are out; the last king standing wins.
+- **Capture the Flag**: a flag circle appears on the board, one at a time, and moves somewhere else every 30 seconds. Each second you have a piece inside it you score a point, or two while you hold it alone. Points are a separate score, not the pieces' own points. A captured piece comes back on its army's starting squares 10 seconds later at full points, kings included, so nobody is eliminated and the board never shrinks. First to 60 points wins.
+
 ## Battlefields
 
 Pick where the war is fought from the menu. The rules are the same on every field; the sky, land, moat, props and weather change.
@@ -35,7 +40,7 @@ Any static file server works. The page loads three.js from the jsDelivr CDN and 
 
 ## Layout
 
-- `src/rules.js` — rules engine (pure functions, no DOM; time is passed in)
+- `src/rules.js` — rules engine for both modes (pure functions, no DOM; time is passed in)
 - `src/bot.js` — computer players
 - `src/main.js` — game loop, 3D pieces, controls and the duel panels
 - `src/fields.js` — the battlefields: colors, moat, props and weather for each

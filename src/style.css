@@ -67,6 +67,7 @@ button.small { padding: 6px 10px; font-size: 12px; }
 .howto li { margin: 6px 0; font-size: 14px; }
 .step { font: 700 11px var(--body); letter-spacing: .25em; text-transform: uppercase; color: var(--gold); margin: 14px 0 8px; opacity: .85; }
 .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.games { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .field {
   display: flex; flex-direction: column; gap: 1px; align-items: center; padding: 9px 6px; text-transform: none;
   background: rgba(20, 12, 10, .72); border: 1px solid rgba(214, 168, 92, .3); box-shadow: none;

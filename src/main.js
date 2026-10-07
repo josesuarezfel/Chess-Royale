@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   newGame, legalMoves, move, startAttack, defend, tick, eligibleGuards, bidLimits, isPlayable, isDoomed,
-  isReady, findPiece, cellCenter, pointsByPlayer, PIECE_NAMES, START_POINTS,
+  isReady, findPiece, cellCenter, pointsByPlayer, PIECE_NAMES, START_POINTS, inFlag, flagHolders,
 } from './rules.js';
 import { botAct, botDefense } from './bot.js';
-import { Particles, Effects, Weather, buildWorld, buildArena, duelArc } from './fx.js';
+import { Particles, Effects, Weather, buildWorld, buildArena, duelArc, buildFlag } from './fx.js';
 import { FIELDS, fieldById } from './fields.js';
 
 const $ = (id) => document.getElementById(id);
@@ -32,6 +32,8 @@ controls.autoRotateSpeed = 0.5;
 const world = buildWorld(scene);
 const weather = new Weather(scene);
 let field = null;
+let mode = 'royale'; // 'royale' or 'flag'
+try { if (localStorage.getItem('chessRoyale.mode') === 'flag') mode = 'flag'; } catch { /* no saved choice */ }
 try { field = fieldById(localStorage.getItem('chessRoyale.field')); } catch { field = FIELDS[0]; }
 const particles = new Particles(scene);
 const fx = new Effects(scene, particles);
@@ -130,6 +132,7 @@ function drawLabel(sprite, piece, color) {
 let state = null;
 let humanId = null; // null while the menu shows a battle between computer players
 let arena = null;
+let flagMarker = null;
 let tiles = null, tileCells = [], tileFall = [], tileScorch = [], tileJitter = [];
 const tileIndex = new Map();
 const pieceObjs = new Map();
@@ -148,6 +151,7 @@ scene.add(selRing);
 const COLORS = {
   light: new THREE.Color('#a8906c'), dark: new THREE.Color('#4a3a2c'), scorch: new THREE.Color('#1a1210'),
   move: new THREE.Color('#79c46a'), capture: new THREE.Color('#ff3b2f'), doom: new THREE.Color('#ff4a12'), sel: new THREE.Color('#ffd36b'),
+  flag: new THREE.Color('#ffd36b'),
 };
 const tmpC = new THREE.Color();
 const tmpM = new THREE.Matrix4();
@@ -158,7 +162,7 @@ const tmpS = new THREE.Vector3(1, 1, 1);
 function startGame(players, human) {
   const now = performance.now();
   humanId = human ? 0 : null;
-  state = newGame(players, { humans: human ? [0] : [], now });
+  state = newGame(players, { humans: human ? [0] : [], now, config: { mode } });
   botWake = state.players.map(() => now + 1500 + Math.random() * 2000);
   selectedId = null; pendingAttack = null; shownDuelId = null;
   buildBoard();
@@ -166,6 +170,7 @@ function startGame(players, human) {
   $('defend-panel').hidden = true;
   $('feed').innerHTML = '';
   controls.autoRotate = !human;
+  document.body.classList.toggle('flag-mode', state.mode === 'flag');
   updateSlow(now);
 }
 
@@ -178,6 +183,9 @@ function buildBoard() {
   arcs.clear();
 
   const R = state.config.boardRadius;
+  if (flagMarker) scene.remove(flagMarker.group);
+  flagMarker = state.mode === 'flag' ? buildFlag(state.config.flagRadius) : null;
+  if (flagMarker) scene.add(flagMarker.group);
   world.setField(field);
   renderer.toneMappingExposure = field.light.exposure;
   weather.set(field.weather);
@@ -315,6 +323,7 @@ function syncTiles(now) {
     tmpC.copy((r + c) % 2 ? COLORS.dark : COLORS.light).multiplyScalar(j.shade);
     if (tileScorch[i] > 0) tmpC.lerp(COLORS.scorch, tileScorch[i]);
     if (isDoomed(state, r, c, now)) tmpC.lerp(COLORS.doom, 0.35 + 0.45 * pulse);
+    if (state.mode === 'flag' && inFlag(state, r, c)) tmpC.lerp(COLORS.flag, 0.22 + 0.12 * pulse);
     const mark = marks.get(r * 1000 + c);
     if (mark) tmpC.lerp(COLORS[mark], mark === 'capture' ? 0.55 + 0.3 * pulse : 0.6);
     tiles.setColorAt(i, tmpC);
@@ -386,6 +395,13 @@ function handleEvents() {
       if (e.owner === humanId) banner('Your king has fallen', 'You are out of the war');
       else banner(`${name} has fallen`, e.reason === 'king captured' ? 'Their king was captured' : 'Their king was lost to the fire');
       feed(`👑 ${name} is out`);
+    } else if (e.kind === 'flag') {
+      if (humanId != null) { banner('A new flag', 'Get a piece inside the circle'); feed('🚩 A flag went up somewhere else'); }
+    } else if (e.kind === 'respawn') {
+      const at = worldPos(...e.at);
+      fx.ring(at.x, at.z, state.players[e.owner].color, 2.2, 0.8);
+      particles.emit(at.x, 0.4, at.z, { color: state.players[e.owner].color, count: 40, speed: 2, up: 3, life: 0.9, gravity: 4 });
+      if (e.owner === humanId) feed(`✨ Your ${PIECE_NAMES[e.type]} is back`);
     } else if (e.kind === 'shrink') {
       fx.shake = Math.max(fx.shake, 0.3);
       if (humanId != null) banner('The firestorm closes in');
@@ -399,7 +415,13 @@ function handleEvents() {
 function showGameOver() {
   const w = state.winner;
   $('gameover-title').textContent = w === humanId ? 'Victory' : w == null ? 'Draw' : 'Defeat';
-  $('gameover-text').textContent = w === humanId ? 'Your king is the last one standing.' : w == null ? 'No king survived.' : `${state.players[w].name} rules the battlefield.`;
+  if (state.mode === 'flag') {
+    $('gameover-text').textContent = w === humanId
+      ? `You held the flags to ${state.scores[w]} points.`
+      : `${state.players[w].name} reached ${state.scores[w]} points. You finished on ${state.scores[humanId]}.`;
+  } else {
+    $('gameover-text').textContent = w === humanId ? 'Your king is the last one standing.' : w == null ? 'No king survived.' : `${state.players[w].name} rules the battlefield.`;
+  }
   $('gameover').hidden = false;
   $('attack-panel').hidden = true;
   $('defend-panel').hidden = true;
@@ -416,7 +438,13 @@ function updateHud(now) {
   $('ready-text').textContent = !m.alive ? 'Defeated' : wait > 0 ? `${(wait / 1000).toFixed(1)}s` : 'Ready';
 
   const storm = $('storm');
-  if (state.radius <= state.config.minRadius) {
+  if (state.mode === 'flag') {
+    const left = Math.max(0, (state.flag ? state.flag.until - now : 0) / 1000);
+    const hot = left <= 6;
+    $('storm-label').textContent = 'Flag moves in';
+    $('storm-text').textContent = `${left.toFixed(1)}s`;
+    storm.classList.toggle('hot', hot);
+  } else if (state.radius <= state.config.minRadius) {
     $('storm-text').textContent = 'Spent';
     storm.classList.remove('hot');
   } else {
@@ -429,6 +457,7 @@ function updateHud(now) {
   let hint = '';
   if (!m.alive) hint = 'Watch the war play out.';
   else if (pendingAttack) hint = 'Choose how many points to attack with.';
+  else if (state.mode === 'flag' && selectedId == null) hint = 'Move pieces into the flag circle to score.';
   else if (selectedId != null) hint = 'Green: move. Red: attack. Click elsewhere to cancel.';
   else hint = 'Click one of your pieces.';
   $('hint').textContent = hint;
@@ -440,11 +469,16 @@ function updateHud(now) {
 function updateSlow(now) {
   lastSlow = now;
   if (humanId == null) return;
+  const flagging = state.mode === 'flag';
+  const holders = flagging ? flagHolders(state) : new Set();
   const totals = pointsByPlayer(state);
+  $('armies-label').textContent = flagging ? `First to ${state.config.targetScore}` : 'Armies';
   $('players').innerHTML = state.players.map((p, i) => {
-    const pct = Math.min(100, (100 * totals[i]) / 147);
+    const val = flagging ? state.scores[i] : totals[i];
+    const pct = Math.min(100, (100 * val) / (flagging ? state.config.targetScore : 147));
     return `<li class="${p.alive ? '' : 'out'}"><span class="crest" style="background:${p.color};color:${p.color}"></span>` +
-      `<span class="name">${esc(p.name)}${p.human ? ' (you)' : ''}</span><span class="pts">${p.alive ? totals[i] : '☠'}</span>` +
+      `<span class="name">${esc(p.name)}${p.human ? ' (you)' : ''}${holders.has(i) ? ' 🚩' : ''}</span>` +
+      `<span class="pts">${p.alive ? val : '☠'}</span>` +
       `<span class="bar"><i style="width:${p.alive ? pct : 0}%;background:${p.color}"></i></span></li>`;
   }).join('');
 }
@@ -665,6 +699,22 @@ function frame(now) {
     syncArcs(t);
     const hot = state.radius > state.config.minRadius && now >= state.nextShrinkAt - state.config.shrinkWarning ? 1 : 0;
     arena.update(t, state.radius, hot, camera);
+    if (flagMarker) {
+      const f = state.flag;
+      flagMarker.group.visible = !!f;
+      if (f) {
+        const { x, y } = cellCenter(state, f.r, f.c);
+        flagMarker.group.position.set(f.x, 0, f.y);
+        const holders = [...flagHolders(state)];
+        COLORS.flag.set(holders.length === 1 ? state.players[holders[0]].color : '#ffd36b');
+        flagMarker.update(t, holders.length === 1 ? state.players[holders[0]].color : null, holders.length > 1);
+        if (holders.length && Math.random() < 0.25) {
+          const a = Math.random() * Math.PI * 2, d = Math.random() * state.config.flagRadius;
+          particles.emit(f.x + Math.cos(a) * d, 0.1, f.y + Math.sin(a) * d, { color: COLORS.flag.getStyle(), count: 1, speed: 0.4, up: 1.2, life: 1.4, gravity: -0.3, spread: 0 });
+        }
+        void x; void y;
+      }
+    }
     // Embers rising from the battlefield.
     for (let i = 0; i < (field.weather === 'embers' ? 3 : 1); i++) {
       const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * (state.radius + 2);
@@ -697,13 +747,31 @@ document.querySelectorAll('[data-players]').forEach((b) => b.addEventListener('c
   $('menu').hidden = true;
   $('hud').hidden = false;
   startGame(Number(b.dataset.players), true);
-  banner(field.name, field.place);
+  banner(mode === 'flag' ? 'Capture the flag' : field.name, mode === 'flag' ? `First to ${state.config.targetScore} points` : field.place);
 }));
 // Battlefield picker: the battle behind the menu moves to the chosen field.
 function renderFields() {
   $('fields').innerHTML = FIELDS.map((f) => `<button type="button" role="radio" aria-checked="${f === field}" class="field${f === field ? ' on' : ''}" data-field="${f.id}">
     <b>${esc(f.name)}</b><span>${esc(f.place)}</span></button>`).join('');
 }
+function renderModes() {
+  $('games').innerHTML = [
+    { id: 'royale', name: 'Battle Royale', sub: 'Last king standing' },
+    { id: 'flag', name: 'Capture the Flag', sub: 'First to 60 points' },
+  ].map((g) => `<button type="button" role="radio" aria-checked="${g.id === mode}" class="field${g.id === mode ? ' on' : ''}" data-mode="${g.id}">
+    <b>${g.name}</b><span>${g.sub}</span></button>`).join('');
+}
+$('games').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mode]');
+  if (!b || b.dataset.mode === mode) return;
+  mode = b.dataset.mode;
+  try { localStorage.setItem('chessRoyale.mode', mode); } catch { /* not saved; fine */ }
+  renderModes();
+  document.querySelector('.eyebrow').textContent = mode === 'flag' ? 'Hold the flag' : 'Last king standing';
+  startGame(6, false);
+});
+renderModes();
+document.querySelector('.eyebrow').textContent = mode === 'flag' ? 'Hold the flag' : 'Last king standing';
 $('fields').addEventListener('click', (e) => {
   const b = e.target.closest('[data-field]');
   if (!b || b.dataset.field === field.id) return;
@@ -720,4 +788,4 @@ resize();
 showMenu();
 
 // Handy for testing from the browser console.
-window.chessRoyale = { get state() { return state; }, get humanId() { return humanId; }, clickCell: (r, c) => onCell(r, c), get field() { return field.id; } };
+window.chessRoyale = { get state() { return state; }, get humanId() { return humanId; }, clickCell: (r, c) => onCell(r, c), get field() { return field.id; }, get mode() { return mode; } };

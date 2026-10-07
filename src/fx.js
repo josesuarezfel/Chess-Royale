@@ -899,3 +899,61 @@ export function duelArc(from, to) {
   };
   return group;
 }
+
+// ---------- the flag, in capture the flag ----------
+export function buildFlag(radius) {
+  const group = new THREE.Group();
+  const gold = new THREE.Color('#ffd36b');
+
+  // The circle on the ground you have to stand in.
+  const ring = new THREE.Mesh(new THREE.RingGeometry(radius - 0.16, radius, 72, 1), new THREE.MeshBasicMaterial({
+    color: gold, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.04;
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 72), new THREE.MeshBasicMaterial({
+    color: gold, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  disc.rotation.x = -Math.PI / 2;
+  disc.position.y = 0.03;
+
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 3.4, 8), new THREE.MeshStandardMaterial({ color: '#2a2018', roughness: 0.7, metalness: 0.3 }));
+  pole.position.y = 1.7;
+  pole.castShadow = true;
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: '#ffd36b', metalness: 0.8, roughness: 0.25 }));
+  knob.position.y = 3.45;
+
+  const clothGeo = new THREE.PlaneGeometry(1.5, 0.95, 14, 7);
+  clothGeo.translate(0.75, 0, 0);
+  const clothMat = new THREE.MeshStandardMaterial({ color: '#f2e6cf', roughness: 0.75, side: THREE.DoubleSide, emissive: '#000000' });
+  const cloth = new THREE.Mesh(clothGeo, clothMat);
+  cloth.position.y = 2.85;
+  cloth.castShadow = true;
+  const base = clothGeo.attributes.position.array.slice();
+
+  const light = new THREE.PointLight('#ffd36b', 14, 14, 1.6);
+  light.position.y = 2.4;
+  group.add(ring, disc, pole, knob, cloth, light);
+  group.visible = false;
+
+  return {
+    group,
+    // color: whoever holds the flag, or null; contested: more than one player on it.
+    update(t, color, contested) {
+      const c = color ? new THREE.Color(color) : gold;
+      ring.material.color.copy(c);
+      disc.material.color.copy(c);
+      light.color.copy(c);
+      clothMat.color.copy(color ? c : new THREE.Color('#f2e6cf'));
+      clothMat.emissive.copy(c).multiplyScalar(contested ? 0.35 + 0.25 * Math.sin(t * 9) : 0.12);
+      ring.material.opacity = 0.65 + 0.3 * Math.sin(t * (contested ? 7 : 2.2));
+      light.intensity = 12 + 6 * Math.sin(t * 3);
+      const pos = clothGeo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const x = base[i * 3], y = base[i * 3 + 1];
+        pos.setZ(i, Math.sin(x * 3.2 - t * 6 + y * 1.5) * 0.14 * (x / 1.5));
+      }
+      pos.needsUpdate = true;
+    },
+  };
+}
