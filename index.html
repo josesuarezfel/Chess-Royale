@@ -5,58 +5,88 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chess Royale</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 <body>
-  <header class="top">
-    <h1>Chess Royale</h1>
-    <button id="rules-btn" class="ghost">How to play</button>
-  </header>
+  <div id="view"></div>
 
-  <main id="app">
-    <section id="setup" class="card">
-      <h2>New game</h2>
-      <p>Everyone plays on this screen. Pieces move like in chess, but every capture is a secret bidding duel.</p>
+  <section id="setup" class="overlay">
+    <div class="card">
+      <h1>Chess Royale</h1>
+      <p>Free-for-all chess on a round board. There are no turns: after every move you wait a few seconds, then go again. Every capture is a secret bidding duel. Last king standing wins.</p>
+      <p class="muted">You play Red against computer players.</p>
       <div class="choices" role="group" aria-label="Number of players">
         <button data-players="2">2 players</button>
-        <button data-players="3">3 players</button>
-        <button data-players="4">4 players</button>
+        <button data-players="3">3</button>
+        <button data-players="4">4</button>
+        <button data-players="6">6</button>
+        <button data-players="8">8</button>
       </div>
-    </section>
+      <details>
+        <summary>How to play</summary>
+        <ul>
+          <li>Pieces move like in chess. Pawns step one square straight in any direction and capture one square diagonally in any direction.</li>
+          <li>Points are life: King 30, Queen 27, Rook 15, Bishop 9, Knight 9, Pawn 3.</li>
+          <li>After each move or attack you wait 4 seconds before acting again.</li>
+          <li>Attacking starts a duel. You bid points in secret, the defender bids too and can call one guard covering the square. Every piece loses what it bid; a higher attack wins the square, a tie or higher defense holds.</li>
+          <li>When you're attacked you have 7 seconds to answer, or your piece bids half its points.</li>
+          <li>The board shrinks after 90 seconds and every 45 seconds after that. Red squares are about to fall.</li>
+          <li>Lose your king and you're out. Drag to rotate the camera, scroll or pinch to zoom.</li>
+        </ul>
+      </details>
+    </div>
+  </section>
 
-    <section id="game" hidden>
-      <div class="board-wrap"><div id="board" role="grid" aria-label="Board"></div></div>
-      <aside class="panel">
-        <div id="turn" class="turn"></div>
-        <div id="shrink" class="muted"></div>
-        <ul id="players" class="players"></ul>
-        <div class="actions">
-          <button id="pass-btn" class="ghost">Skip turn</button>
-          <button id="new-btn" class="ghost">New game</button>
-        </div>
-        <h3>Log</h3>
-        <ol id="log" class="log" reversed></ol>
-      </aside>
-    </section>
-  </main>
+  <div id="hud" hidden>
+    <div class="hud-top">
+      <div class="pill" id="ready"><span id="ready-text">Ready</span><div class="bar"><div id="ready-bar"></div></div></div>
+      <div class="pill" id="shrink"></div>
+    </div>
+    <aside class="side">
+      <ul id="players" class="players"></ul>
+      <ol id="log" class="log"></ol>
+      <button id="quit" class="ghost small">New game</button>
+    </aside>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
 
-  <div id="modal" class="modal" hidden>
-    <div class="modal-card" role="dialog" aria-modal="true"><div id="modal-body"></div></div>
+    <div id="attack-panel" class="panel" hidden>
+      <h2 id="attack-title">Attack</h2>
+      <p id="attack-desc" class="muted"></p>
+      <label for="attack-bid">Attack points <output id="attack-out"></output></label>
+      <input id="attack-bid" type="range" min="1" max="1" value="1">
+      <div class="row"><button class="ghost" id="attack-cancel">Cancel</button><button id="attack-go">Attack</button></div>
+    </div>
+
+    <div id="defend-panel" class="panel danger" hidden>
+      <h2>You're under attack!</h2>
+      <div class="bar timer"><div id="defend-timer"></div></div>
+      <p id="defend-desc"></p>
+      <label for="defend-bid">Defense points <output id="defend-out"></output></label>
+      <input id="defend-bid" type="range" min="0" max="0" value="0">
+      <div id="guard-box">
+        <label for="guard-sel">Guard</label>
+        <select id="guard-sel"></select>
+        <label for="guard-bid">Guard points <output id="guard-out"></output></label>
+        <input id="guard-bid" type="range" min="0" max="0" value="0" disabled>
+      </div>
+      <div class="row"><button id="defend-go">Defend</button></div>
+    </div>
   </div>
 
-  <template id="rules-tpl">
-    <h2>How to play</h2>
-    <ul>
-      <li>Pieces move like in chess. No check, checkmate, castling or en passant.</li>
-      <li>Points are life: King 30, Queen 27, Rook 15, Bishop 9, Knight 9, Pawn 3.</li>
-      <li>Moving onto an enemy starts a duel. The attacker bids 1 or more points, the defender bids 0 or more. Both bid in secret.</li>
-      <li>The defender may call one guard: one of its pieces that also covers the square. The guard's bid adds to the defense.</li>
-      <li>Every piece loses what it bid. A piece must keep at least 1 point.</li>
-      <li>Higher attack wins: the defender dies and the attacker takes its square. A tie or higher defense stops the attack.</li>
-      <li>Lose your king and you are out. Last king standing wins.</li>
-      <li>After round 15 the outer ring of the board collapses every 5 rounds. Striped squares fall at the end of the round.</li>
-    </ul>
-    <button data-close>Got it</button>
-  </template>
+  <section id="gameover" class="overlay" hidden>
+    <div class="card">
+      <h1 id="gameover-title"></h1>
+      <p id="gameover-text"></p>
+      <div class="row"><button class="ghost" id="look">Look at the board</button><button id="again">Play again</button></div>
+    </div>
+  </section>
 
   <script type="module" src="src/main.js"></script>
 </body>
