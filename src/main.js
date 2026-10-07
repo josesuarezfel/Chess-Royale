@@ -5,7 +5,8 @@ import {
   isReady, findPiece, cellCenter, pointsByPlayer, PIECE_NAMES, START_POINTS,
 } from './rules.js';
 import { botAct, botDefense } from './bot.js';
-import { Particles, Effects, buildWorld, buildArena, duelArc } from './fx.js';
+import { Particles, Effects, Weather, buildWorld, buildArena, duelArc } from './fx.js';
+import { FIELDS, fieldById } from './fields.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
@@ -29,6 +30,9 @@ controls.minDistance = 6;
 controls.autoRotateSpeed = 0.5;
 
 const world = buildWorld(scene);
+const weather = new Weather(scene);
+let field = null;
+try { field = fieldById(localStorage.getItem('chessRoyale.field')); } catch { field = FIELDS[0]; }
 const particles = new Particles(scene);
 const fx = new Effects(scene, particles);
 
@@ -174,7 +178,12 @@ function buildBoard() {
   arcs.clear();
 
   const R = state.config.boardRadius;
-  arena = buildArena(R, state.players);
+  world.setField(field);
+  renderer.toneMappingExposure = field.light.exposure;
+  weather.set(field.weather);
+  COLORS.light.set(field.board.light);
+  COLORS.dark.set(field.board.dark);
+  arena = buildArena(R, state.players, field);
   scene.add(arena.group);
 
   tileCells = [];
@@ -657,7 +666,7 @@ function frame(now) {
     const hot = state.radius > state.config.minRadius && now >= state.nextShrinkAt - state.config.shrinkWarning ? 1 : 0;
     arena.update(t, state.radius, hot, camera);
     // Embers rising from the battlefield.
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < (field.weather === 'embers' ? 3 : 1); i++) {
       const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * (state.radius + 2);
       particles.emit(Math.cos(a) * d, 0.1, Math.sin(a) * d, { color: '#ff8a3a', count: 1, speed: 0.3, up: 0.6, life: 3.5, gravity: -0.15, spread: 0 });
     }
@@ -665,6 +674,7 @@ function frame(now) {
     if (now - lastSlow > 300) updateSlow(now);
   }
   world.update(t);
+  weather.update(dt, t);
   particles.update(dt);
   fx.update(dt);
   controls.update();
@@ -687,8 +697,22 @@ document.querySelectorAll('[data-players]').forEach((b) => b.addEventListener('c
   $('menu').hidden = true;
   $('hud').hidden = false;
   startGame(Number(b.dataset.players), true);
-  banner('To war!', 'Protect your king');
+  banner(field.name, field.place);
 }));
+// Battlefield picker: the battle behind the menu moves to the chosen field.
+function renderFields() {
+  $('fields').innerHTML = FIELDS.map((f) => `<button type="button" role="radio" aria-checked="${f === field}" class="field${f === field ? ' on' : ''}" data-field="${f.id}">
+    <b>${esc(f.name)}</b><span>${esc(f.place)}</span></button>`).join('');
+}
+$('fields').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-field]');
+  if (!b || b.dataset.field === field.id) return;
+  field = fieldById(b.dataset.field);
+  try { localStorage.setItem('chessRoyale.field', field.id); } catch { /* not saved; fine */ }
+  renderFields();
+  startGame(6, false);
+});
+renderFields();
 $('quit').addEventListener('click', showMenu);
 $('again').addEventListener('click', showMenu);
 $('look').addEventListener('click', () => { $('gameover').hidden = true; });
@@ -696,4 +720,4 @@ resize();
 showMenu();
 
 // Handy for testing from the browser console.
-window.chessRoyale = { get state() { return state; }, get humanId() { return humanId; }, clickCell: (r, c) => onCell(r, c) };
+window.chessRoyale = { get state() { return state; }, get humanId() { return humanId; }, clickCell: (r, c) => onCell(r, c), get field() { return field.id; } };

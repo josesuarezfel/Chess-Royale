@@ -13,6 +13,17 @@ Free-for-all chess in 3D on a round board. There are no turns: after every move 
 
 The prototype is you (Red) against 1 to 7 computer players.
 
+## Battlefields
+
+Pick where the war is fought from the menu. The rules are the same on every field; the sky, land, moat, props and weather change.
+
+- **The Forge** (legend): a volcano with a lava moat and drifting embers.
+- **Waterloo** (Belgium, 1815): green farmland, a river, farmhouses, cannons and rain.
+- **Stalingrad** (Russia, 1942): snow, a frozen river, bombed-out buildings, tank traps and wrecked tanks.
+- **El Alamein** (Egypt, 1942): desert dunes, a sand pit, palms, wrecked tanks and blowing sand.
+- **Thermopylae** (Greece, 480 BC): rocky hills at sunset over the sea, marble columns, olive trees and fallen shields.
+- **Sekigahara** (Japan, 1600): misty green mountains, a river, cherry trees, torii gates, stone lanterns and falling petals.
+
 ## Run it
 
 ```sh
@@ -27,5 +38,6 @@ Any static file server works. The page loads three.js from the jsDelivr CDN and 
 - `src/rules.js` — rules engine (pure functions, no DOM; time is passed in)
 - `src/bot.js` — computer players
 - `src/main.js` — game loop, 3D pieces, controls and the duel panels
+- `src/fields.js` — the battlefields: colors, moat, props and weather for each
 - `src/fx.js` — battlefield scenery (shader fire and smoke, lava moat, terrain, ruins, banners) and combat effects
 - `test/rules.test.js` — rules tests, including a full bots-only game
