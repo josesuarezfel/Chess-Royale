@@ -88,7 +88,7 @@ function buildPiece(piece, color) {
   const label = makeLabel();
   label.position.y = spec.height + 0.3;
   group.add(label);
-  group.userData = { label, mat, hp: null, color };
+  group.userData = { label, mat, hp: null, color, ring };
   return group;
 }
 
@@ -247,6 +247,17 @@ function syncPieces(now, dt) {
     obj.userData.mat.emissive.set(fighting ? '#ff2a10' : '#000000');
     obj.userData.mat.emissiveIntensity = fighting ? 0.35 + 0.35 * Math.sin(now / 90) : 0;
     obj.children[0].position.x = fighting ? Math.sin(now / 30) * 0.02 : 0;
+    // While you defend, protecting pieces glow: gold if they're in, white if they could be.
+    const ring = obj.userData.ring;
+    const canGuard = defendGuards.some((g) => g.piece.id === p.id);
+    if (canGuard) {
+      const picked = defendPick.has(p.id);
+      ring.material.color.set(picked ? '#ffd36b' : '#ffffff');
+      ring.scale.setScalar((picked ? 1.35 : 1.15) + (p.id === hoverGuardId ? 0.25 : 0) + 0.08 * Math.sin(now / 120));
+    } else if (ring.scale.x !== 1) {
+      ring.material.color.set(color);
+      ring.scale.setScalar(1);
+    }
   }
   for (const [id, obj] of pieceObjs) {
     if (seen.has(id)) continue;
@@ -481,41 +492,95 @@ $('attack-go').addEventListener('click', () => {
 });
 
 // ---------- defending ----------
+// Quick menu: tick the protecting pieces you want in the defense (or click them on the board)
+// and set each one's points.
+let defendPick = new Map(); // piece id -> bid, for the pieces taking part
+let defendGuards = []; // pieces that can protect the attacked one
+let hoverGuardId = null;
+
 function updateDefendPanel(now) {
   const duel = state.duels.filter((d) => d.defendOwner === humanId).sort((a, b) => a.deadline - b.deadline)[0];
   const panel = $('defend-panel');
-  if (!duel) { panel.hidden = true; shownDuelId = null; return; }
+  if (!duel) { panel.hidden = true; shownDuelId = null; defendGuards = []; return; }
   const dAt = findPiece(state, duel.defenderId), aAt = findPiece(state, duel.attackerId);
   if (!dAt || !aAt) return;
   const dp = state.board[dAt[0]][dAt[1]], ap = state.board[aAt[0]][aAt[1]];
   if (shownDuelId !== duel.id) {
     shownDuelId = duel.id;
-    const guards = eligibleGuards(state, duel);
+    defendGuards = eligibleGuards(state, duel).sort((a, b) => b.piece.hp - a.piece.hp);
+    defendPick = new Map();
     $('defend-title').textContent = `Your ${PIECE_NAMES[dp.type]}`;
-    $('defend-desc').textContent = `${state.players[ap.owner].name} ${PIECE_NAMES[ap.type]} (${ap.hp} pts) attacks with a secret bid. Your ${PIECE_NAMES[dp.type]} can't defend itself: choose what each protecting piece bids.`;
-    $('guards').innerHTML = guards.map((g) => {
-      const max = bidLimits(g.piece, 'guard').max;
-      return `<li><span>${PIECE_NAMES[g.piece.type]} (${g.piece.hp} pts)</span><output>${Math.floor(max / 2)}</output>` +
-        `<input type="range" min="0" max="${max}" value="${Math.floor(max / 2)}" data-guard="${g.piece.id}" aria-label="${PIECE_NAMES[g.piece.type]} bid"></li>`;
-    }).join('');
-    $('guards').querySelectorAll('input').forEach((inp) => inp.addEventListener('input', () => {
-      inp.previousElementSibling.textContent = inp.value;
-      updateDefenseTotal();
-    }));
-    updateDefenseTotal();
+    $('defend-desc').textContent = `${state.players[ap.owner].name} ${PIECE_NAMES[ap.type]} attacks with a secret bid of up to ${bidLimits(ap, 'attack').max}. ` +
+      `Pick the pieces that defend (tap them here or on the board) and how many points each puts in. Beat or tie the attack to survive.`;
+    renderGuardRows();
     panel.hidden = false;
   }
   const left = Math.max(0, (duel.deadline - now) / 1000);
   $('defend-count').textContent = Math.ceil(left);
   $('defend-count').classList.toggle('low', left < 4);
 }
-function updateDefenseTotal() {
-  $('defend-total').textContent = [...$('guards').querySelectorAll('input')].reduce((s, i) => s + Number(i.value), 0);
+
+function renderGuardRows() {
+  $('guards').innerHTML = defendGuards.map((g) => {
+    const max = bidLimits(g.piece, 'guard').max;
+    const on = defendPick.has(g.piece.id);
+    const bid = defendPick.get(g.piece.id) ?? 0;
+    return `<li class="${on ? 'on' : ''}" data-guard="${g.piece.id}">
+      <label class="pick"><input type="checkbox" ${on ? 'checked' : ''}><span>${PIECE_NAMES[g.piece.type]} <small>${g.piece.hp} pts</small></span></label>
+      <output>${bid}</output>
+      <input type="range" min="0" max="${max}" value="${bid}" ${on ? '' : 'disabled'} aria-label="${PIECE_NAMES[g.piece.type]} points">
+      <div class="chips"><button type="button" data-frac="0.25">¼</button><button type="button" data-frac="0.5">½</button><button type="button" data-frac="1">All</button></div>
+    </li>`;
+  }).join('');
+  $('guards').querySelectorAll('li').forEach((li) => {
+    const id = Number(li.dataset.guard);
+    const g = defendGuards.find((x) => x.piece.id === id);
+    const max = bidLimits(g.piece, 'guard').max;
+    li.addEventListener('pointerenter', () => { hoverGuardId = id; });
+    li.addEventListener('pointerleave', () => { if (hoverGuardId === id) hoverGuardId = null; });
+    li.querySelector('input[type=checkbox]').addEventListener('change', (e) => toggleGuard(id, e.target.checked));
+    li.querySelector('input[type=range]').addEventListener('input', (e) => setGuardBid(id, Number(e.target.value)));
+    li.querySelectorAll('[data-frac]').forEach((b) => b.addEventListener('click', () => {
+      setGuardBid(id, Math.round(max * Number(b.dataset.frac)));
+    }));
+  });
+  updateDefenseTotal();
 }
+
+function toggleGuard(id, on = !defendPick.has(id)) {
+  const g = defendGuards.find((x) => x.piece.id === id);
+  if (!g) return;
+  if (on) defendPick.set(id, defendPick.get(id) || Math.ceil(bidLimits(g.piece, 'guard').max / 2));
+  else defendPick.delete(id);
+  renderGuardRows();
+}
+
+function setGuardBid(id, bid) {
+  if (!defendPick.has(id)) defendPick.set(id, bid);
+  defendPick.set(id, bid);
+  const li = $('guards').querySelector(`li[data-guard="${id}"]`);
+  if (!li.classList.contains('on')) { renderGuardRows(); return; }
+  li.querySelector('output').textContent = bid;
+  li.querySelector('input[type=range]').value = bid;
+  updateDefenseTotal();
+}
+
+function updateDefenseTotal() {
+  const total = [...defendPick.values()].reduce((s, b) => s + b, 0);
+  $('defend-total').textContent = total;
+  $('defend-count-pieces').textContent = defendPick.size
+    ? `${defendPick.size} of ${defendGuards.length} pieces defending`
+    : `${defendGuards.length} piece${defendGuards.length === 1 ? '' : 's'} can defend`;
+}
+
+$('defend-all').addEventListener('click', () => {
+  for (const g of defendGuards) if (!defendPick.has(g.piece.id)) defendPick.set(g.piece.id, Math.ceil(bidLimits(g.piece, 'guard').max / 2));
+  renderGuardRows();
+});
 $('defend-go').addEventListener('click', () => {
   const duel = state.duels.find((d) => d.id === shownDuelId);
   if (!duel) return;
-  const guards = [...$('guards').querySelectorAll('input')].map((i) => ({ id: Number(i.dataset.guard), bid: Number(i.value) }));
+  const guards = [...defendPick].map(([id, bid]) => ({ id, bid }));
   try {
     defend(state, duel.id, { guards });
   } catch {
@@ -524,6 +589,7 @@ $('defend-go').addEventListener('click', () => {
     defend(state, duel.id, { guards: guards.filter((g) => ok.some((o) => o.piece.id === g.id && g.bid <= o.piece.hp - 1)) });
   }
   shownDuelId = null;
+  defendGuards = [];
 });
 
 // ---------- clicking ----------
@@ -546,6 +612,8 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 
 function onCell(r, c) {
   if (state.gameOver || !me().alive) return;
+  const clicked = state.board[r][c];
+  if (clicked && defendGuards.some((g) => g.piece.id === clicked.id)) { toggleGuard(clicked.id); return; }
   const now = performance.now();
   const sel = selectedId != null ? findPiece(state, selectedId) : null;
   const target = sel && legalMoves(state, sel[0], sel[1]).find((m) => m.r === r && m.c === c);

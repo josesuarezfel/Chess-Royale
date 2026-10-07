@@ -8,7 +8,7 @@ Free-for-all chess in 3D on a round board. There are no turns: after every move 
 - Pieces move like in chess. Pawns have no "forward" on a round board: they step one square straight in any direction and capture one square diagonally in any direction.
 - After each move or attack, a player waits 5 seconds before acting again.
 - Attacking starts a duel. The attacker bids points in secret. The attacked piece can't defend itself: only the pieces protecting its square (that could capture there) bid to save it. Every piece loses what it bid. Higher attack wins and takes the square; a tie holds. An unprotected piece falls at once.
-- The defending side has 15 seconds to answer, or each protecting piece bids half its points.
+- When you're attacked, a quick menu lists the pieces protecting that square. Pick any of them (in the menu or by clicking them on the board) and set how many points each one bids; the defense is their total. You have 15 seconds to answer, or each protecting piece bids half its points.
 - A ring of fire shrinks the board one square after 2 minutes and every minute after that; the squares fall into the lava. Lose your king and you are out.
 
 The prototype is you (Red) against 1 to 7 computer players.

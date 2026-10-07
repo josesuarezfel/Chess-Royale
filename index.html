@@ -40,7 +40,7 @@
           <li><b>No turns</b>: after every move or attack you wait 5 seconds, then go again. So does everyone else.</li>
           <li><b>Points are life</b>: King 30, Queen 27, Rook 15, Bishop 9, Knight 9, Pawn 3. Each piece's bar shows what it has left.</li>
           <li><b>Attack</b>: click a red square and bid points in secret. An attacked piece can't defend itself: only pieces that protect its square can bid to save it. An unprotected piece falls at once.</li>
-          <li><b>Defend</b>: when you're attacked, you have 15 seconds to choose what each protecting piece bids. Higher attack wins; a tie holds. Everyone loses what they bid.</li>
+          <li><b>Defend</b>: when you're attacked, a quick menu lists every piece protecting the square. Tick the ones you want (or click them on the board) and set each one's points with its slider or the ¼, ½ and All buttons. You have 15 seconds. Higher attack wins; a tie holds. Everyone loses what they bid.</li>
           <li><b>Firestorm</b>: after 2 minutes the ring of fire closes in every minute. Squares turning red are about to fall into the lava.</li>
           <li>Lose your king and you're out. Drag to turn the camera, scroll or pinch to zoom.</li>
         </ul>
@@ -94,8 +94,9 @@
         <div class="countdown" id="defend-count">15</div>
       </div>
       <p id="defend-desc" class="muted"></p>
+      <div class="guards-head"><span id="defend-count-pieces" class="muted"></span><button type="button" class="ghost small" id="defend-all">Add all</button></div>
       <ul id="guards" class="guards"></ul>
-      <div class="total">Defense <b id="defend-total">0</b></div>
+      <div class="total">Total defense <b id="defend-total">0</b></div>
       <div class="row"><button id="defend-go">Defend</button></div>
     </div>
   </div>
