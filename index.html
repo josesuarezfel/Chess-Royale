@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess Royale</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Chess Royale</h1>
+    <button id="rules-btn" class="ghost">How to play</button>
+  </header>
+
+  <main id="app">
+    <section id="setup" class="card">
+      <h2>New game</h2>
+      <p>Everyone plays on this screen. Pieces move like in chess, but every capture is a secret bidding duel.</p>
+      <div class="choices" role="group" aria-label="Number of players">
+        <button data-players="2">2 players</button>
+        <button data-players="3">3 players</button>
+        <button data-players="4">4 players</button>
+      </div>
+    </section>
+
+    <section id="game" hidden>
+      <div class="board-wrap"><div id="board" role="grid" aria-label="Board"></div></div>
+      <aside class="panel">
+        <div id="turn" class="turn"></div>
+        <div id="shrink" class="muted"></div>
+        <ul id="players" class="players"></ul>
+        <div class="actions">
+          <button id="pass-btn" class="ghost">Skip turn</button>
+          <button id="new-btn" class="ghost">New game</button>
+        </div>
+        <h3>Log</h3>
+        <ol id="log" class="log" reversed></ol>
+      </aside>
+    </section>
+  </main>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true"><div id="modal-body"></div></div>
+  </div>
+
+  <template id="rules-tpl">
+    <h2>How to play</h2>
+    <ul>
+      <li>Pieces move like in chess. No check, checkmate, castling or en passant.</li>
+      <li>Points are life: King 30, Queen 27, Rook 15, Bishop 9, Knight 9, Pawn 3.</li>
+      <li>Moving onto an enemy starts a duel. The attacker bids 1 or more points, the defender bids 0 or more. Both bid in secret.</li>
+      <li>The defender may call one guard: one of its pieces that also covers the square. The guard's bid adds to the defense.</li>
+      <li>Every piece loses what it bid. A piece must keep at least 1 point.</li>
+      <li>Higher attack wins: the defender dies and the attacker takes its square. A tie or higher defense stops the attack.</li>
+      <li>Lose your king and you are out. Last king standing wins.</li>
+      <li>After round 15 the outer ring of the board collapses every 5 rounds. Striped squares fall at the end of the round.</li>
+    </ul>
+    <button data-close>Got it</button>
+  </template>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
