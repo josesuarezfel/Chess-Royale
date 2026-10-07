@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess Royale</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="src/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="view"></div>
+  <div id="vignette"></div>
+  <div id="banner" aria-live="assertive"></div>
+
+  <section id="menu" class="overlay menu">
+    <div class="menu-inner">
+      <p class="eyebrow">Last king standing</p>
+      <h1 class="title">Chess Royale</h1>
+      <p class="tagline">No turns. No mercy. Every capture is a secret duel.</p>
+      <p class="step">Choose the battlefield</p>
+      <div id="fields" class="fields" role="radiogroup" aria-label="Battlefield"></div>
+      <p class="step">Choose the game</p>
+      <div id="games" class="games" role="radiogroup" aria-label="Game mode"></div>
+      <p class="step">Choose the battle</p>
+      <div class="modes" role="group" aria-label="Choose a battle">
+        <button class="mode" data-players="2"><b>Duel</b><span>You vs 1</span></button>
+        <button class="mode" data-players="4"><b>Skirmish</b><span>4 armies</span></button>
+        <button class="mode" data-players="6"><b>War</b><span>6 armies</span></button>
+        <button class="mode" data-players="8"><b>Royale</b><span>8 armies</span></button>
+      </div>
+      <details class="howto">
+        <summary>How to play</summary>
+        <ul>
+          <li><b>Move</b>: click one of your red pieces, then a green square. Pieces move like in chess; pawns step straight and capture diagonally in any direction.</li>
+          <li><b>No turns</b>: after every move or attack you wait 5 seconds, then go again. So does everyone else.</li>
+          <li><b>Points are life</b>: King 30, Queen 27, Rook 15, Bishop 9, Knight 9, Pawn 3. Each piece's bar shows what it has left.</li>
+          <li><b>Attack</b>: click a red square and bid points in secret. An attacked piece can't defend itself: only pieces that protect its square can bid to save it. An unprotected piece falls at once.</li>
+          <li><b>Defend</b>: when you're attacked, a quick menu lists every piece protecting the square. Tick the ones you want (or click them on the board) and set each one's points with its slider or the ¼, ½ and All buttons. You have 15 seconds. Higher attack wins; a tie holds. Everyone loses what they bid.</li>
+          <li><b>Firestorm</b>: after 2 minutes the ring of fire closes in every minute. Squares turning red are about to fall into the lava.</li>
+          <li><b>Capture the Flag</b>: a flag circle appears on the board, one at a time, and moves every 30 seconds. Every second you have a piece inside you score a point, or two while you hold it alone. Captured pieces come back at your starting squares after 10 seconds, kings included, and nobody is eliminated. First to 60 points wins.</li>
+          <li><b>Battlefields</b>: fight at a volcano, Waterloo, Stalingrad, El Alamein, Thermopylae or Sekigahara. Only the scenery changes; the rules are the same.</li>
+          <li>Lose your king and you're out. Drag to turn the camera, scroll or pinch to zoom.</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <div id="hud" hidden>
+    <div class="hud-left">
+      <div class="card commander">
+        <svg class="ring" viewBox="0 0 44 44" aria-hidden="true">
+          <circle cx="22" cy="22" r="19" class="ring-bg"/>
+          <circle cx="22" cy="22" r="19" class="ring-fg" id="ready-ring"/>
+        </svg>
+        <div>
+          <div class="label">Your army</div>
+          <div class="big" id="ready-text">Ready</div>
+        </div>
+      </div>
+      <div class="card storm" id="storm">
+        <div class="label" id="storm-label">Firestorm</div>
+        <div class="big" id="storm-text"></div>
+      </div>
+      <div class="hint" id="hint"></div>
+    </div>
+
+    <aside class="card armies">
+      <div class="label" id="armies-label">Armies</div>
+      <ul id="players"></ul>
+      <ol id="feed" class="feed"></ol>
+      <button id="quit" class="ghost small">Retreat</button>
+    </aside>
+
+    <div id="attack-panel" class="panel" hidden>
+      <div class="label">Attack</div>
+      <h2 id="attack-title"></h2>
+      <p id="attack-desc" class="muted"></p>
+      <div class="bid-row">
+        <input id="attack-bid" type="range" min="1" max="1" value="1" aria-label="Attack points">
+        <output id="attack-out" class="bid">1</output>
+      </div>
+      <div class="row"><button class="ghost" id="attack-cancel">Cancel</button><button id="attack-go">Attack</button></div>
+    </div>
+
+    <div id="defend-panel" class="panel danger" hidden>
+      <div class="defend-head">
+        <div>
+          <div class="label">Under attack</div>
+          <h2 id="defend-title"></h2>
+        </div>
+        <div class="countdown" id="defend-count">15</div>
+      </div>
+      <p id="defend-desc" class="muted"></p>
+      <div class="guards-head"><span id="defend-count-pieces" class="muted"></span><button type="button" class="ghost small" id="defend-all">Add all</button></div>
+      <ul id="guards" class="guards"></ul>
+      <div class="total">Total defense <b id="defend-total">0</b></div>
+      <div class="row"><button id="defend-go">Defend</button></div>
+    </div>
+  </div>
+
+  <section id="gameover" class="overlay" hidden>
+    <div class="menu-inner">
+      <h1 class="title" id="gameover-title"></h1>
+      <p class="tagline" id="gameover-text"></p>
+      <div class="row center"><button class="ghost" id="look">Look at the battlefield</button><button id="again">Fight again</button></div>
+    </div>
+  </section>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
