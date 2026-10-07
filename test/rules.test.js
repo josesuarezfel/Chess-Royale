@@ -64,58 +64,78 @@ test('no turns: anyone can act once their wait time is over', () => {
   move(s, [7, 5], [6, 5], 1000);
 });
 
-test('duel: the attack wins, both bids are paid, the attacker takes the square', () => {
+test('an unprotected piece falls at once: the attacker pays its bid and takes the square', () => {
+  const s = emptyGame();
+  withKings(s);
+  const rook = put(s, 8, 4, 'R', 0, 15);
+  const bishop = put(s, 8, 9, 'B', 1, 9);
+  const duel = startAttack(s, { from: [8, 4], to: [8, 9], attackBid: 1 }, 0);
+  assert.equal(duel.result.success, true);
+  assert.equal(s.duels.length, 0);
+  assert.equal(s.board[8][9], rook);
+  assert.equal(findPiece(s, bishop.id), null);
+  assert.equal(rook.hp, 14);
+});
+
+test('only protecting pieces defend: guards bid, the attacked piece pays nothing', () => {
+  const s = emptyGame();
+  withKings(s);
+  const rook = put(s, 8, 4, 'R', 0, 15);
+  const bishop = put(s, 8, 9, 'B', 1, 9);
+  const knight = put(s, 6, 8, 'N', 1, 9); // covers (8, 9)
+  const pawn = put(s, 9, 10, 'P', 1, 3); // covers (8, 9) diagonally
+  const duel = startAttack(s, { from: [8, 4], to: [8, 9], attackBid: 8 }, 0);
+  assert.equal(duel.result, undefined, 'protected target waits for an answer');
+  assert.equal(legalMoves(s, 8, 4).length, 0, 'attacker is locked while the duel is open');
+  assert.deepEqual(eligibleGuards(s, duel).map((g) => g.piece).sort((a, b) => a.id - b.id), [knight, pawn]);
+  const res = defend(s, duel.id, { guards: [{ id: knight.id, bid: 6 }, { id: pawn.id, bid: 2 }] });
+  assert.equal(res.success, false, 'a tie goes to the defenders');
+  assert.equal(res.totalDefense, 8);
+  assert.equal(rook.hp, 7);
+  assert.equal(knight.hp, 3);
+  assert.equal(pawn.hp, 1);
+  assert.equal(bishop.hp, 9);
+  assert.equal(s.board[8][4], rook);
+});
+
+test('a higher attack beats the guards and takes the square', () => {
   const s = emptyGame();
   withKings(s);
   const rook = put(s, 8, 4, 'R', 0, 15);
   put(s, 8, 9, 'B', 1, 9);
+  const knight = put(s, 6, 8, 'N', 1, 9);
   const duel = startAttack(s, { from: [8, 4], to: [8, 9], attackBid: 6 }, 0);
-  assert.equal(legalMoves(s, 8, 4).length, 0, 'attacker is locked while the duel is open');
-  const res = defend(s, duel.id, { defenseBid: 5 });
+  const res = defend(s, duel.id, { guards: [{ id: knight.id, bid: 5 }] });
   assert.equal(res.success, true);
   assert.equal(s.board[8][9], rook);
   assert.equal(rook.hp, 9);
+  assert.equal(knight.hp, 4);
 });
 
-test('duel: ties go to the defender and both pay', () => {
+test('pieces that do not protect the square cannot defend it', () => {
   const s = emptyGame();
   withKings(s);
-  const rook = put(s, 8, 4, 'R', 0, 15);
-  const bishop = put(s, 8, 9, 'B', 1, 9);
+  put(s, 8, 4, 'R', 0, 15);
+  put(s, 8, 9, 'B', 1, 9);
+  put(s, 6, 8, 'N', 1, 9);
+  const far = put(s, 2, 2, 'Q', 1, 27);
   const duel = startAttack(s, { from: [8, 4], to: [8, 9], attackBid: 6 }, 0);
-  const res = defend(s, duel.id, { defenseBid: 6 });
-  assert.equal(res.success, false);
-  assert.equal(rook.hp, 9);
-  assert.equal(bishop.hp, 3);
-  assert.equal(s.board[8][4], rook);
+  assert.throws(() => defend(s, duel.id, { guards: [{ id: far.id, bid: 10 }] }), /cannot guard/);
 });
 
-test('guard adds its bid and pays it', () => {
+test('when time runs out, each guard bids half its points', () => {
   const s = emptyGame();
   withKings(s);
   put(s, 8, 4, 'R', 0, 15);
   const bishop = put(s, 8, 9, 'B', 1, 9);
-  const knight = put(s, 6, 8, 'N', 1, 9); // covers (8, 9)
-  const duel = startAttack(s, { from: [8, 4], to: [8, 9], attackBid: 8 }, 0);
-  assert.deepEqual(eligibleGuards(s, duel).map((g) => g.piece), [knight]);
-  const res = defend(s, duel.id, { defenseBid: 4, guardId: knight.id, guardBid: 4 });
-  assert.equal(res.success, false);
-  assert.equal(bishop.hp, 5);
-  assert.equal(knight.hp, 5);
-});
-
-test('an unanswered attack gets the automatic defense when time runs out', () => {
-  const s = emptyGame();
-  withKings(s);
-  put(s, 8, 4, 'R', 0, 15);
-  const bishop = put(s, 8, 9, 'B', 1, 9);
+  const knight = put(s, 6, 8, 'N', 1, 9);
   const duel = startAttack(s, { from: [8, 4], to: [8, 9], attackBid: 3 }, 0);
-  assert.equal(autoDefense(s, duel).defenseBid, 4);
-  tick(s, 4999);
+  assert.deepEqual(autoDefense(s, duel), { guards: [{ id: knight.id, bid: 4 }] });
+  tick(s, CFG.duelWindow - 1);
   assert.equal(s.duels.length, 1);
-  tick(s, 5000);
+  tick(s, CFG.duelWindow);
   assert.equal(s.duels.length, 0);
-  assert.equal(bishop.hp, 5);
+  assert.equal(knight.hp, 5);
   assert.equal(s.board[8][9], bishop);
 });
 
@@ -123,11 +143,10 @@ test('killing a king eliminates the player and ends a 2-player game', () => {
   const s = emptyGame();
   withKings(s);
   put(s, 8, 10, 'Q', 0, 27);
-  put(s, 3, 8, 'R', 1, 15);
-  const duel = startAttack(s, { from: [8, 10], to: [8, 14], attackBid: 10 }, 0);
-  defend(s, duel.id, { defenseBid: 9 });
+  put(s, 3, 3, 'R', 1, 15);
+  startAttack(s, { from: [8, 10], to: [8, 14], attackBid: 10 }, 0);
   assert.equal(s.players[1].alive, false);
-  assert.equal(s.board[3][8], null);
+  assert.equal(s.board[3][3], null);
   assert.equal(s.gameOver, true);
   assert.equal(s.winner, 0);
 });

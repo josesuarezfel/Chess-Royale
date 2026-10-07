@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Chess Royale</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800;900&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="src/style.css">
   <script type="importmap">
     {
@@ -16,75 +19,92 @@
 </head>
 <body>
   <div id="view"></div>
+  <div id="vignette"></div>
+  <div id="banner" aria-live="assertive"></div>
 
-  <section id="setup" class="overlay">
-    <div class="card">
-      <h1>Chess Royale</h1>
-      <p>Free-for-all chess on a round board. There are no turns: after every move you wait a few seconds, then go again. Every capture is a secret bidding duel. Last king standing wins.</p>
-      <p class="muted">You play Red against computer players.</p>
-      <div class="choices" role="group" aria-label="Number of players">
-        <button data-players="2">2 players</button>
-        <button data-players="3">3</button>
-        <button data-players="4">4</button>
-        <button data-players="6">6</button>
-        <button data-players="8">8</button>
+  <section id="menu" class="overlay menu">
+    <div class="menu-inner">
+      <p class="eyebrow">Last king standing</p>
+      <h1 class="title">Chess Royale</h1>
+      <p class="tagline">No turns. No mercy. Every capture is a secret duel.</p>
+      <div class="modes" role="group" aria-label="Choose a battle">
+        <button class="mode" data-players="2"><b>Duel</b><span>You vs 1</span></button>
+        <button class="mode" data-players="4"><b>Skirmish</b><span>4 armies</span></button>
+        <button class="mode" data-players="6"><b>War</b><span>6 armies</span></button>
+        <button class="mode" data-players="8"><b>Royale</b><span>8 armies</span></button>
       </div>
-      <details>
+      <details class="howto">
         <summary>How to play</summary>
         <ul>
-          <li>Pieces move like in chess. Pawns step one square straight in any direction and capture one square diagonally in any direction.</li>
-          <li>Points are life: King 30, Queen 27, Rook 15, Bishop 9, Knight 9, Pawn 3.</li>
-          <li>After each move or attack you wait 4 seconds before acting again.</li>
-          <li>Attacking starts a duel. You bid points in secret, the defender bids too and can call one guard covering the square. Every piece loses what it bid; a higher attack wins the square, a tie or higher defense holds.</li>
-          <li>When you're attacked you have 7 seconds to answer, or your piece bids half its points.</li>
-          <li>The board shrinks after 90 seconds and every 45 seconds after that. Red squares are about to fall.</li>
-          <li>Lose your king and you're out. Drag to rotate the camera, scroll or pinch to zoom.</li>
+          <li><b>Move</b>: click one of your red pieces, then a green square. Pieces move like in chess; pawns step straight and capture diagonally in any direction.</li>
+          <li><b>No turns</b>: after every move or attack you wait 5 seconds, then go again. So does everyone else.</li>
+          <li><b>Points are life</b>: King 30, Queen 27, Rook 15, Bishop 9, Knight 9, Pawn 3. Each piece's bar shows what it has left.</li>
+          <li><b>Attack</b>: click a red square and bid points in secret. An attacked piece can't defend itself: only pieces that protect its square can bid to save it. An unprotected piece falls at once.</li>
+          <li><b>Defend</b>: when you're attacked, you have 15 seconds to choose what each protecting piece bids. Higher attack wins; a tie holds. Everyone loses what they bid.</li>
+          <li><b>Firestorm</b>: after 2 minutes the ring of fire closes in every minute. Squares turning red are about to fall into the lava.</li>
+          <li>Lose your king and you're out. Drag to turn the camera, scroll or pinch to zoom.</li>
         </ul>
       </details>
     </div>
   </section>
 
   <div id="hud" hidden>
-    <div class="hud-top">
-      <div class="pill" id="ready"><span id="ready-text">Ready</span><div class="bar"><div id="ready-bar"></div></div></div>
-      <div class="pill" id="shrink"></div>
+    <div class="hud-left">
+      <div class="card commander">
+        <svg class="ring" viewBox="0 0 44 44" aria-hidden="true">
+          <circle cx="22" cy="22" r="19" class="ring-bg"/>
+          <circle cx="22" cy="22" r="19" class="ring-fg" id="ready-ring"/>
+        </svg>
+        <div>
+          <div class="label">Your army</div>
+          <div class="big" id="ready-text">Ready</div>
+        </div>
+      </div>
+      <div class="card storm" id="storm">
+        <div class="label">Firestorm</div>
+        <div class="big" id="storm-text"></div>
+      </div>
+      <div class="hint" id="hint"></div>
     </div>
-    <aside class="side">
-      <ul id="players" class="players"></ul>
-      <ol id="log" class="log"></ol>
-      <button id="quit" class="ghost small">New game</button>
+
+    <aside class="card armies">
+      <div class="label">Armies</div>
+      <ul id="players"></ul>
+      <ol id="feed" class="feed"></ol>
+      <button id="quit" class="ghost small">Retreat</button>
     </aside>
-    <div id="toasts" class="toasts" aria-live="polite"></div>
 
     <div id="attack-panel" class="panel" hidden>
-      <h2 id="attack-title">Attack</h2>
+      <div class="label">Attack</div>
+      <h2 id="attack-title"></h2>
       <p id="attack-desc" class="muted"></p>
-      <label for="attack-bid">Attack points <output id="attack-out"></output></label>
-      <input id="attack-bid" type="range" min="1" max="1" value="1">
+      <div class="bid-row">
+        <input id="attack-bid" type="range" min="1" max="1" value="1" aria-label="Attack points">
+        <output id="attack-out" class="bid">1</output>
+      </div>
       <div class="row"><button class="ghost" id="attack-cancel">Cancel</button><button id="attack-go">Attack</button></div>
     </div>
 
     <div id="defend-panel" class="panel danger" hidden>
-      <h2>You're under attack!</h2>
-      <div class="bar timer"><div id="defend-timer"></div></div>
-      <p id="defend-desc"></p>
-      <label for="defend-bid">Defense points <output id="defend-out"></output></label>
-      <input id="defend-bid" type="range" min="0" max="0" value="0">
-      <div id="guard-box">
-        <label for="guard-sel">Guard</label>
-        <select id="guard-sel"></select>
-        <label for="guard-bid">Guard points <output id="guard-out"></output></label>
-        <input id="guard-bid" type="range" min="0" max="0" value="0" disabled>
+      <div class="defend-head">
+        <div>
+          <div class="label">Under attack</div>
+          <h2 id="defend-title"></h2>
+        </div>
+        <div class="countdown" id="defend-count">15</div>
       </div>
+      <p id="defend-desc" class="muted"></p>
+      <ul id="guards" class="guards"></ul>
+      <div class="total">Defense <b id="defend-total">0</b></div>
       <div class="row"><button id="defend-go">Defend</button></div>
     </div>
   </div>
 
   <section id="gameover" class="overlay" hidden>
-    <div class="card">
-      <h1 id="gameover-title"></h1>
-      <p id="gameover-text"></p>
-      <div class="row"><button class="ghost" id="look">Look at the board</button><button id="again">Play again</button></div>
+    <div class="menu-inner">
+      <h1 class="title" id="gameover-title"></h1>
+      <p class="tagline" id="gameover-text"></p>
+      <div class="row center"><button class="ghost" id="look">Look at the battlefield</button><button id="again">Fight again</button></div>
     </div>
   </section>
 

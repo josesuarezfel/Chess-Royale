@@ -6,11 +6,11 @@ export const PIECE_NAMES = { K: 'King', Q: 'Queen', R: 'Rook', B: 'Bishop', N: '
 
 export const DEFAULT_CONFIG = {
   boardRadius: null, // in squares from the centre to the edge; null picks one by player count
-  cooldown: 4000, // wait after each move or attack
-  duelWindow: 7000, // time a defender has to answer an attack
-  shrinkStart: 90000, // first collapse
-  shrinkEvery: 45000, // between collapses
-  shrinkWarning: 10000, // doomed squares are marked this long before
+  cooldown: 5000, // wait after each move or attack
+  duelWindow: 15000, // time a defender has to answer an attack
+  shrinkStart: 120000, // first collapse
+  shrinkEvery: 60000, // between collapses
+  shrinkWarning: 15000, // doomed squares are marked this long before
   minRadius: 3, // the board stops shrinking here
 };
 
@@ -62,9 +62,11 @@ function placeArmies(state, count) {
       }
       return out;
     };
-    // Push the army as far out as it fits.
+    // Push the army as far out as it fits, leaving the outer ring free so the first collapse
+    // doesn't wipe out the corners of every army.
+    const fits = ({ at }) => isPlayable(state, at[0], at[1]) && distFromCenter(state, at[0], at[1]) <= R - 1.2;
     let d = R;
-    while (d > 0 && !cellsFor(d).every(({ at }) => isPlayable(state, at[0], at[1]))) d -= 0.25;
+    while (d > 0 && !cellsFor(d).every(fits)) d -= 0.25;
     for (const { type, at } of cellsFor(d)) {
       if (state.board[at[0]][at[1]]) throw new Error('Board too small for this many players');
       state.board[at[0]][at[1]] = makePiece(type, i);
@@ -80,7 +82,7 @@ function makePiece(type, owner) {
 export function newGame(players, { humans = [0], now = 0, config = {} } = {}) {
   if (players < 2 || players > 8) throw new Error('2 to 8 players');
   const cfg = { ...DEFAULT_CONFIG, ...config };
-  cfg.boardRadius ??= players <= 4 ? 11 : players <= 6 ? 13 : 16;
+  cfg.boardRadius ??= players <= 4 ? 11 : players <= 6 ? 14 : 17;
   const size = cfg.boardRadius * 2;
   const state = {
     config: cfg,
@@ -229,7 +231,8 @@ export function eligibleGuards(state, duel) {
   return out;
 }
 
-// Starts a duel. The attacker's wait time begins now; the defender answers with defend().
+// Starts a duel. The attacker's wait time begins now; the defender's side answers with defend().
+// An unprotected target is resolved at once (duel.result is set).
 export function startAttack(state, { from, to, attackBid }, now) {
   const attacker = checkAction(state, from, to, true, now);
   checkBid(attacker, attackBid, 'attack');
@@ -245,18 +248,20 @@ export function startAttack(state, { from, to, attackBid }, now) {
     deadline: now + state.config.duelWindow,
   };
   state.duels.push(duel);
+  // Nothing protects the target: there is nothing to decide, so it falls right away.
+  if (eligibleGuards(state, duel).length === 0) duel.result = defend(state, duel.id, { guards: [] });
   return duel;
 }
 
-// What a defender bids when it doesn't answer in time: half its points, no guard.
+// What the guards bid when the defender doesn't answer in time: each guard half its points.
 export function autoDefense(state, duel) {
-  const at = findPiece(state, duel.defenderId);
-  const hp = at ? state.board[at[0]][at[1]].hp : 1;
-  return { defenseBid: Math.floor((hp - 1) / 2), guardId: null, guardBid: 0 };
+  return { guards: eligibleGuards(state, duel).map((g) => ({ id: g.piece.id, bid: Math.floor((g.piece.hp - 1) / 2) })) };
 }
 
-// Resolves a duel. Every piece loses what it bid; a higher attack kills the defender and takes its square.
-export function defend(state, duelId, { defenseBid = 0, guardId = null, guardBid = 0 } = {}) {
+// Resolves a duel. The attacked piece can't bid for itself: only the pieces protecting it
+// (its guards) defend. Every piece loses what it bid; a higher attack kills the defender and takes its square.
+// answer = { guards: [{ id, bid }] }
+export function defend(state, duelId, { guards = [] } = {}) {
   const duel = state.duels.find((d) => d.id === duelId);
   if (!duel) throw new Error('No such duel');
   const aAt = findPiece(state, duel.attackerId);
@@ -267,24 +272,27 @@ export function defend(state, duelId, { defenseBid = 0, guardId = null, guardBid
     state.duels = state.duels.filter((d) => d !== duel); // someone fell off the board meanwhile
     return null;
   }
-  checkBid(defender, defenseBid, 'defense');
-  let guard = null;
-  if (guardId != null) {
-    guard = eligibleGuards(state, duel).find((g) => g.piece.id === guardId)?.piece;
-    if (!guard) throw new Error('That piece cannot guard');
-    checkBid(guard, guardBid, 'guard');
+  const eligible = eligibleGuards(state, duel);
+  const used = [];
+  for (const { id, bid } of guards) {
+    const g = eligible.find((e) => e.piece.id === id);
+    if (!g) throw new Error('That piece cannot guard');
+    if (used.some((u) => u.piece === g.piece)) throw new Error('Guard listed twice');
+    checkBid(g.piece, bid, 'guard');
+    if (bid > 0) used.push({ piece: g.piece, bid });
   }
   state.duels = state.duels.filter((d) => d !== duel);
 
-  const gBid = guard ? guardBid : 0;
-  const totalDefense = defenseBid + gBid;
+  const totalDefense = used.reduce((sum, u) => sum + u.bid, 0);
   const success = duel.attackBid > totalDefense;
   attacker.hp -= duel.attackBid;
-  if (guard) guard.hp -= gBid;
+  for (const u of used) u.piece.hp -= u.bid;
   const result = {
-    duelId, success, attackBid: duel.attackBid, defenseBid, guardBid: gBid, totalDefense,
-    attackerType: attacker.type, defenderType: defender.type, guardType: guard?.type ?? null,
+    duelId, success, attackBid: duel.attackBid, totalDefense,
+    guards: used.map((u) => ({ type: u.piece.type, bid: u.bid })),
+    attackerType: attacker.type, defenderType: defender.type,
     attackOwner: attacker.owner, defendOwner: defender.owner,
+    from: aAt, to: dAt,
   };
   const aName = `${state.players[attacker.owner].name} ${PIECE_NAMES[attacker.type]}`;
   const dName = `${state.players[defender.owner].name} ${PIECE_NAMES[defender.type]}`;
@@ -294,8 +302,7 @@ export function defend(state, duelId, { defenseBid = 0, guardId = null, guardBid
     state.log.push(`${aName} beat ${dName} (${duel.attackBid} vs ${totalDefense})`);
     if (defender.type === 'K') eliminate(state, defender.owner, 'king captured');
   } else {
-    defender.hp -= defenseBid;
-    state.log.push(`${dName} held off ${aName} (${totalDefense} vs ${duel.attackBid})`);
+    state.log.push(`${dName} was saved by its guards (${totalDefense} vs ${duel.attackBid})`);
   }
   state.events.push({ kind: 'duel', ...result });
   checkWinner(state);

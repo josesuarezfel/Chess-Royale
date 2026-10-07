@@ -1,6 +1,6 @@
 // Simple computer opponents. They act as soon as their wait time is over, plus a short "thinking" pause.
 import {
-  legalMoves, isReady, startAttack, move, eligibleGuards, findPiece, distFromCenter, isDoomed, START_POINTS,
+  legalMoves, isReady, startAttack, move, eligibleGuards, findPiece, distFromCenter, isDoomed, attacks, START_POINTS,
 } from './rules.js';
 
 const rand = (rng, a, b) => a + (b - a) * rng();
@@ -18,17 +18,18 @@ export function botAct(state, owner, now, rng = Math.random) {
     }
   }
 
-  // Attack when the odds look good: plenty of points compared with the target.
+  // Attack when the odds look good: unprotected targets are free, protected ones cost more.
   let best = null;
   for (const a of captures) {
     const target = state.board[a.to[0]][a.to[1]];
-    const odds = (a.piece.hp - 1) / Math.max(1, target.hp);
+    const guardPower = protectionOf(state, a.to, target);
+    const odds = (a.piece.hp - 1) / Math.max(1, guardPower * 0.6);
     const value = START_POINTS[target.type] + (target.type === 'K' ? 40 : 0);
     const score = value * Math.min(odds, 2) - (a.piece.type === 'K' ? 20 : 0);
-    if (odds >= 0.6 && (!best || score > best.score)) best = { ...a, score, target };
+    if ((guardPower === 0 || odds >= 0.8) && (!best || score > best.score)) best = { ...a, score, guardPower };
   }
   if (best) {
-    const want = Math.ceil(best.target.hp * rand(rng, 0.45, 1.0));
+    const want = best.guardPower === 0 ? 1 : Math.ceil(best.guardPower * rand(rng, 0.35, 0.8));
     const attackBid = Math.max(1, Math.min(best.piece.hp - 1, want));
     startAttack(state, { from: best.from, to: best.to, attackBid }, now);
     return { kind: 'attack', from: best.from, to: best.to };
@@ -51,16 +52,27 @@ export function botAct(state, owner, now, rng = Math.random) {
   return { kind: 'move', from: pick.from, to: pick.to };
 }
 
-// The bot's secret answer to an attack on one of its pieces.
+// Points the pieces protecting a square could put up (what an attacker has to beat at most).
+function protectionOf(state, at, target) {
+  let total = 0;
+  for (let r = 0; r < state.size; r++) {
+    for (let c = 0; c < state.size; c++) {
+      const p = state.board[r][c];
+      if (!p || p === target || p.owner !== target.owner || p.hp < 2) continue;
+      if (attacks(state, r, c).some(([rr, cc]) => rr === at[0] && cc === at[1])) total += p.hp - 1;
+    }
+  }
+  return total;
+}
+
+// The bot's secret answer to an attack: each protecting piece bids part of its points.
 export function botDefense(state, duel, rng = Math.random) {
   const at = findPiece(state, duel.defenderId);
-  const defender = state.board[at[0]][at[1]];
-  const share = defender.type === 'K' ? rand(rng, 0.6, 1) : rand(rng, 0.25, 0.85);
-  const defenseBid = Math.round((defender.hp - 1) * share);
-  const guards = eligibleGuards(state, duel).sort((a, b) => b.piece.hp - a.piece.hp);
-  if (guards.length && rng() < 0.7) {
-    const g = guards[0].piece;
-    return { defenseBid, guardId: g.id, guardBid: Math.round((g.hp - 1) * rand(rng, 0.2, 0.6)) };
-  }
-  return { defenseBid, guardId: null, guardBid: 0 };
+  const kingAttacked = state.board[at[0]][at[1]].type === 'K';
+  return {
+    guards: eligibleGuards(state, duel).map((g) => ({
+      id: g.piece.id,
+      bid: Math.round((g.piece.hp - 1) * (kingAttacked ? rand(rng, 0.6, 1) : rand(rng, 0.25, 0.75))),
+    })),
+  };
 }
